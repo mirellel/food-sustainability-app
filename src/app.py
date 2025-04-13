@@ -43,6 +43,10 @@ def fetch_food_consumption():
 
     df = pd.DataFrame(records)
     df = df.groupby("Year").first().reset_index()
+    # rename values to english
+    english_names = ["Cereals","Potatoes","Milk","Meat","Fish","Wheat","Rye","Barley","Oats","Rice","Beef and veal","Pork","Poultry meat","Eggs","Farm milk","Whole milk","Low-fat milk","Skimmed milk","Sour milk","Yoghurt","Cheese","Butter"]
+    rename_dict = dict(zip(df.columns[1:], english_names))
+    df = df.rename(columns=rename_dict)
     return df
 
 # load data
@@ -65,7 +69,7 @@ st.title("📊 Finnish Food Consumption Over Time")
 st.subheader("Explore food consumption trends")
 
 # dropdown menu, default values meat milk and eggs
-products = st.multiselect("Select food types", options=food_consumption.columns[1:], default=['Maito', 'Liha', 'Kananmunat'])
+products = st.multiselect("Select food types", options=food_consumption.columns[1:], default=['Milk', 'Meat', 'Eggs'])
 
 # slider for filtering years
 year_range = st.slider("Select Year Range",
