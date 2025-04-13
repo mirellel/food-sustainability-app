@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # load data
-food_consumption = pd.read_csv("idv_project/src/data/Luke_Maa_Ravtase_03_20250413-163420.csv")
+food_consumption = pd.read_csv("/data/Luke_Maa_Ravtase_03_20250413-163420.csv")
 food_consumption = food_consumption.infer_objects(copy=False)
 
 # define min and max years for filtering
