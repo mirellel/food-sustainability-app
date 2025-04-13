@@ -1,9 +1,52 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import requests
+
+# get data through API
+LUKE_API_URL = "https://statdb.luke.fi:443/PxWeb/api/v1/en/LUKE/02%20Maatalous/08%20Muut/02%20Ravintotase/03_Elintarvikkeiden_kulutus_50.px"
+
+def fetch_food_consumption():
+    query = {
+        "query": [
+            {
+                "code": "Vuosi",
+                "selection": {
+                    "filter": "item",
+                    "values": [str(year) for year in range(1950, 2024)]
+                }
+            },
+            {
+                "code": "Elintarvike",
+                "selection": {
+                    "filter": "item",
+                    "values":["Vilja","Peruna","Maito","Liha","Kala","Vehnä","Ruis","Ohra","Kaura","Riisi","Naudanliha","Sianliha","Siipikarjanliha","Kananmunat","Tilamaito","Täysmaito","Kevytmaito","Rasvaton maito","Piimä","Jogurtti","Juusto","Voi"],
+                    "valueTexts":["Cereals","Potatoes","Milk","Meat","Fish","Wheat","Rye","Barley","Oats","Rice","Beef and veal","Pork","Poultry meat","Eggs","Farm milk","Whole milk","Low-fat milk","Skimmed milk","Sour milk","Yoghurt","Cheese","Butter"]
+                }
+            }
+        ],
+        "response": {
+            "format": "json"
+        }
+    }
+
+    response = requests.post(LUKE_API_URL, json=query)
+    response.raise_for_status()
+    data_json = response.json()
+
+    records = []
+    for item in data_json['data']:
+        year = item['key'][0]
+        product = item['key'][1]
+        value = item['values'][0]
+        records.append({"Year": int(year), product: float(value) if value != ".." else None})
+
+    df = pd.DataFrame(records)
+    df = df.groupby("Year").first().reset_index()
+    return df
 
 # load data
-food_consumption = pd.read_csv("/data/Luke_Maa_Ravtase_03_20250413-163420.csv")
+food_consumption = fetch_food_consumption()
 food_consumption = food_consumption.infer_objects(copy=False)
 
 # define min and max years for filtering
@@ -22,7 +65,7 @@ st.title("📊 Finnish Food Consumption Over Time")
 st.subheader("Explore food consumption trends")
 
 # dropdown menu, default values meat milk and eggs
-products = st.multiselect("Select meat types", options=food_consumption.columns[1:], default=['Meat', 'Milk', 'Eggs'])
+products = st.multiselect("Select food types", options=food_consumption.columns[1:], default=['Maito', 'Liha', 'Kananmunat'])
 
 # slider for filtering years
 year_range = st.slider("Select Year Range",
