@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -73,9 +74,11 @@ with tab1:
                 f"{max_consumption:.1f} kg")
 
 # --- tab 2 setup ---
+current_dir = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.join(current_dir, 'data', 'greenhouse-gas-emissions-per-kilogram-of-food.csv')
 
 # load data
-emissions_of_food = pd.read_csv('data/greenhouse-gas-emissions-per-kilogram-of-food.csv')
+emissions_of_food = pd.read_csv(data_path)
 
 # rename columns for simplification
 emissions_of_food = (
