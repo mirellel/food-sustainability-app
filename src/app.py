@@ -1,93 +1,142 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import requests
+import altair as alt
+from fetch_data import fetch_food_consumption
 
-# get data through API
-LUKE_API_URL = "https://statdb.luke.fi:443/PxWeb/api/v1/en/LUKE/02%20Maatalous/08%20Muut/02%20Ravintotase/03_Elintarvikkeiden_kulutus_50.px"
+# define tabs
+tab1, tab2 = st.tabs(["Food Consumption", "Food Emissions"])
 
-def fetch_food_consumption():
-    query = {
-        "query": [
-            {
-                "code": "Vuosi",
-                "selection": {
-                    "filter": "item",
-                    "values": [str(year) for year in range(1950, 2024)]
-                }
-            },
-            {
-                "code": "Elintarvike",
-                "selection": {
-                    "filter": "item",
-                    "values":["Vilja","Peruna","Maito","Liha","Kala","Vehnä","Ruis","Ohra","Kaura","Riisi","Naudanliha","Sianliha","Siipikarjanliha","Kananmunat","Tilamaito","Täysmaito","Kevytmaito","Rasvaton maito","Piimä","Jogurtti","Juusto","Voi"],
-                    "valueTexts":["Cereals","Potatoes","Milk","Meat","Fish","Wheat","Rye","Barley","Oats","Rice","Beef and veal","Pork","Poultry meat","Eggs","Farm milk","Whole milk","Low-fat milk","Skimmed milk","Sour milk","Yoghurt","Cheese","Butter"]
-                }
-            }
-        ],
-        "response": {
-            "format": "json"
-        }
-    }
-
-    response = requests.post(LUKE_API_URL, json=query)
-    response.raise_for_status()
-    data_json = response.json()
-
-    records = []
-    for item in data_json['data']:
-        year = item['key'][0]
-        product = item['key'][1]
-        value = item['values'][0]
-        records.append({"Year": int(year), product: float(value) if value != ".." else None})
-
-    df = pd.DataFrame(records)
-    df = df.groupby("Year").first().reset_index()
-    # rename values to english
-    english_names = ["Cereals","Potatoes","Milk","Meat","Fish","Wheat","Rye","Barley","Oats","Rice","Beef and veal","Pork","Poultry meat","Eggs","Farm milk","Whole milk","Low-fat milk","Skimmed milk","Sour milk","Yoghurt","Cheese","Butter"]
-    rename_dict = dict(zip(df.columns[1:], english_names))
-    df = df.rename(columns=rename_dict)
-    return df
-
-# load data
-food_consumption = fetch_food_consumption()
-food_consumption = food_consumption.infer_objects(copy=False)
-
-# define min and max years for filtering
+# --- tab 1 setup ---
+food_consumption = fetch_food_consumption().infer_objects(copy=False)
 min_year = int(food_consumption['Year'].min())
 max_year = int(food_consumption['Year'].max())
-
-
-# make data numeric and interpolate
 for col in food_consumption.columns[1:]:
     food_consumption[col] = pd.to_numeric(food_consumption[col], errors='coerce')
+food_consumption = food_consumption.interpolate()
 
-food_consumption = food_consumption.interpolate(method='linear')
 
-# app
-st.title("📊 Finnish Food Consumption Over Time")
-st.subheader("Explore food consumption trends")
+with tab1:
+    tab1.title("📊 Finnish Food Consumption Over Time")
+    tab1.subheader("Explore food consumption trends")
 
-# dropdown menu, default values meat milk and eggs
-products = st.multiselect("Select food types", options=food_consumption.columns[1:], default=['Milk', 'Meat', 'Eggs'])
+    products = tab1.multiselect(
+        "Select food types",
+        options=food_consumption.columns[1:],
+        default=['Milk', 'Meat', 'Eggs']
+    )
+    year_range = tab1.slider(
+        "Select Year Range",
+        min_value=min_year,
+        max_value=max_year,
+        value=(1950, max_year)
+    )
 
-# slider for filtering years
-year_range = st.slider("Select Year Range",
-                       min_value=min_year,
-                       max_value=max_year,
-                       value=(1950, max_year))
-filtered_data = food_consumption[(food_consumption['Year'] >= year_range[0]) & (food_consumption['Year'] <= year_range[1])]
+    fd = food_consumption[
+        (food_consumption['Year'] >= year_range[0]) &
+        (food_consumption['Year'] <= year_range[1])
+    ]
 
-# plot data
-fig, ax = plt.subplots(figsize=(10, 5))
-for product in products:
-    ax.plot(filtered_data['Year'], filtered_data[product], label=product)
+    # Melt to long form
+    df_long = fd.melt(id_vars='Year', value_vars=products,
+                      var_name='Food', value_name='Consumption')
 
-ax.set_title("Food Consumption Over Time")
-ax.set_xlabel("Year")
-ax.set_ylabel("kg/person/year")
-ax.legend()
-ax.grid(True)
+    line_chart = (
+        alt.Chart(df_long)
+        .mark_line(point=True, strokeWidth=2, interpolate='monotone')
+        .encode(
+            x=alt.X('Year:O', title='Year'),
+            y=alt.Y('Consumption:Q', title='kg/person/year'),
+            color=alt.Color('Food:N', legend=alt.Legend(title='Food')),
+            tooltip=[
+                alt.Tooltip('Year:O'),
+                alt.Tooltip('Food:N'),
+                alt.Tooltip('Consumption:Q', format='.1f')
+            ]
+        )
+        .properties(width=700, height=400)
+        .interactive()
+    )
 
-st.pyplot(fig)
+    tab1.altair_chart(line_chart, use_container_width=True)
+    min_consumption = df_long['Consumption'].min()
+    max_consumption = df_long['Consumption'].max()
+    min_item = df_long.loc[df_long['Consumption'].idxmin(), ['Food', 'Year']]
+    max_item = df_long.loc[df_long['Consumption'].idxmax(), ['Food', 'Year']]
 
+    col1, col2 = tab1.columns(2)
+    col1.metric("Lowest Consumption", 
+                f"{min_item['Food']} ({min_item['Year']})", 
+                f"{min_consumption:.1f} kg")
+    col2.metric("Highest Consumption", 
+                f"{max_item['Food']} ({max_item['Year']})", 
+                f"{max_consumption:.1f} kg")
+
+# --- tab 2 setup ---
+
+# load data
+emissions_of_food = pd.read_csv('data/greenhouse-gas-emissions-per-kilogram-of-food.csv')
+
+# rename columns for simplification
+emissions_of_food = (
+    emissions_of_food
+    .drop(columns=['Year'])
+    .rename(columns={
+        'Emissions per kilogram': 'ghg_emission',
+        'Entity': 'food'
+    })
+)
+# round to 2 decimal places
+emissions_of_food['ghg_emission'] = emissions_of_food['ghg_emission'].round(2)
+
+with tab2:
+    tab2.title("🥦 Emissions of Food Products")
+    tab2.subheader("CO₂‑eq emissions per kilogram of food")
+
+    # top emitters for defaults
+    top_emitters = (
+        emissions_of_food
+        .sort_values('ghg_emission', ascending=False)
+        .head(8)['food']
+        .tolist()
+    )
+    selected = tab2.multiselect(
+        "Select food items to display",
+        options=emissions_of_food['food'].unique(),
+        default=top_emitters
+    )
+
+    filtered = emissions_of_food[emissions_of_food['food'].isin(selected)]
+
+    # bar chart
+    chart = (
+        alt.Chart(filtered)
+        .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+        .encode(
+            x=alt.X('ghg_emission:Q', title='GHG (kg CO₂‑eq per kg)'),
+            y=alt.Y('food:N', sort='-x', title='Food'),
+            color=alt.Color(
+                'ghg_emission:Q',
+                scale=alt.Scale(scheme='greens'),
+                legend=alt.Legend(title='Emission Intensity')
+            ),
+            tooltip=[
+                alt.Tooltip('food:N', title='Food'),
+                alt.Tooltip('ghg_emission:Q', title='GHG (kg CO₂‑eq)', format='.2f')
+            ]
+        )
+        .properties(height=500, width=700)
+    )
+    bars = chart
+    text = bars.mark_text(
+        align='left',
+        dx=3  # shift text rightwards
+    ).encode(
+        text=alt.Text('ghg_emission:Q', format='.2f')
+    )
+
+    tab2.altair_chart((bars + text).configure_axis(
+        labelFontSize=12, titleFontSize=14
+    ).configure_legend(
+        titleFontSize=13, labelFontSize=11
+    ).configure_view(strokeOpacity=0), use_container_width=True)
