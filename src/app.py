@@ -138,7 +138,7 @@ with tab2:
             y=alt.Y('food:N', sort='-x', title='Food'),
             color=alt.Color(
                 'ghg_emission:Q',
-                scale=alt.Scale(scheme='greens'),
+                scale=alt.Scale(scheme='reds'),
                 legend=alt.Legend(title='Emission Intensity')
             ),
             tooltip=[
