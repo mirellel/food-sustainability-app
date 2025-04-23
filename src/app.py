@@ -1,7 +1,6 @@
 import os
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 import altair as alt
 from fetch_data import fetch_food_consumption
 
@@ -76,9 +75,12 @@ with tab1:
 # --- tab 2 setup ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 data_path = os.path.join(current_dir, 'data', 'greenhouse-gas-emissions-per-kilogram-of-food.csv')
+data_path_2 = os.path.join(current_dir, 'data', 'greenhouse-gas-emissions-per-kilogram-of-food-product.csv')
+
 
 # load data
 emissions_of_food = pd.read_csv(data_path)
+emissions_of_food_2 = pd.read_csv(data_path_2)
 
 # rename columns for simplification
 emissions_of_food = (
@@ -89,8 +91,24 @@ emissions_of_food = (
         'Entity': 'food'
     })
 )
+
+# rename columns for simplification
+emissions_of_food_2 = (
+    emissions_of_food_2
+    .drop(columns=['Year'])
+    .rename(columns={
+        'GHG emissions per kilogram (Poore & Nemecek, 2018)': 'ghg_emission',
+        'Entity': 'food'
+    })
+)
 # round to 2 decimal places
 emissions_of_food['ghg_emission'] = emissions_of_food['ghg_emission'].round(2)
+
+new_rows = emissions_of_food_2[~emissions_of_food_2['food'].isin(emissions_of_food['food'])]
+
+# now concatenate the new rows
+combined_food_emissions = pd.concat([emissions_of_food, new_rows], ignore_index=True)
+combined_food_emissions = combined_food_emissions.sort_values(by='food').reset_index(drop=True)
 
 with tab2:
     tab2.title("🥦 Emissions of Food Products")
@@ -98,18 +116,18 @@ with tab2:
 
     # top emitters for defaults
     top_emitters = (
-        emissions_of_food
+        combined_food_emissions
         .sort_values('ghg_emission', ascending=False)
         .head(8)['food']
         .tolist()
     )
     selected = tab2.multiselect(
         "Select food items to display",
-        options=emissions_of_food['food'].unique(),
+        options=combined_food_emissions['food'].unique(),
         default=top_emitters
     )
 
-    filtered = emissions_of_food[emissions_of_food['food'].isin(selected)]
+    filtered = combined_food_emissions[combined_food_emissions['food'].isin(selected)]
 
     # bar chart
     chart = (
