@@ -4,8 +4,36 @@ import pandas as pd
 import altair as alt
 from fetch_data import fetch_food_consumption
 
+# change background to mint green
+st.markdown("""
+    <style>
+    .stApp {
+        background-color: #f5fdf4;  /* soft mint green */
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+if 'show_intro' not in st.session_state:
+    st.session_state.show_intro = True
+
+# show an info card  when opening the application
+if st.session_state.show_intro:
+    with st.expander("ℹ️ Welcome to the Food Emissions App! (click to hide)", expanded=True):
+        st.markdown("""
+        👋 **Welcome!** This app helps you explore food consumption and related greenhouse gas (GHG) emissions.
+        
+        ### 🧭 Tabs Overview:
+        - **Food Consumption**: See trends in food consumption over time.
+        - **Emissions of Food Products**: View GHG emissions per kilogram of food items.
+        - **Your Diet Calculator**: Estimate your own diet’s weekly and annual emissions.
+
+        🔍 Use filters and sliders to explore the data. Colors indicate emission intensity (green = low, red = high).
+        """)
+        if st.button("❌ Close This Message"):
+            st.session_state.show_intro = False
+
 # define tabs
-tab1, tab2 = st.tabs(["Food Consumption", "Food Emissions"])
+tab1, tab2, tab3 = st.tabs(["📊 Food Consumption", "🌍 Food Emissions", "🧮 Your Diet Emissions"])
 
 # --- tab 1 setup ---
 food_consumption = fetch_food_consumption().infer_objects(copy=False)
@@ -47,7 +75,8 @@ with tab1:
         .encode(
             x=alt.X('Year:O', title='Year'),
             y=alt.Y('Consumption:Q', title='kg/person/year'),
-            color=alt.Color('Food:N', legend=alt.Legend(title='Food')),
+            color=alt.Color('Food:N', legend=alt.Legend(title='Food'),
+                            scale=alt.Scale(scheme='viridis')),
             tooltip=[
                 alt.Tooltip('Year:O'),
                 alt.Tooltip('Food:N'),
@@ -65,12 +94,19 @@ with tab1:
     max_item = df_long.loc[df_long['Consumption'].idxmax(), ['Food', 'Year']]
 
     col1, col2 = tab1.columns(2)
-    col1.metric("Lowest Consumption", 
-                f"{min_item['Food']} ({min_item['Year']})", 
-                f"{min_consumption:.1f} kg")
-    col2.metric("Highest Consumption", 
-                f"{max_item['Food']} ({max_item['Year']})", 
-                f"{max_consumption:.1f} kg")
+    tab1.markdown("### Per-Food Min and Max Consumption")
+
+    for food in products:
+        food_data = df_long[df_long['Food'] == food]
+        min_val = food_data['Consumption'].min()
+        max_val = food_data['Consumption'].max()
+        min_year = food_data.loc[food_data['Consumption'].idxmin(), 'Year']
+        max_year = food_data.loc[food_data['Consumption'].idxmax(), 'Year']
+
+        col1, col2 = tab1.columns(2)
+        col1.metric(f"{food} - Lowest", f"{min_val:.1f} kg", f"({min_year})")
+        col2.metric(f"{food} - Highest", f"{max_val:.1f} kg", f"({max_year})")
+
 
 # --- tab 2 setup ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -112,19 +148,13 @@ combined_food_emissions = combined_food_emissions.sort_values(by='food').reset_i
 
 with tab2:
     tab2.title("🥦 Emissions of Food Products")
-    tab2.subheader("CO₂‑eq emissions per kilogram of food")
+    tab2.subheader("CO₂‑eq emissions per kilogram of food 🌍")
 
     # top emitters for defaults
-    top_emitters = (
-        combined_food_emissions
-        .sort_values('ghg_emission', ascending=False)
-        .head(8)['food']
-        .tolist()
-    )
     selected = tab2.multiselect(
         "Select food items to display",
         options=combined_food_emissions['food'].unique(),
-        default=top_emitters
+        default= ['Coffee', 'Beef (beef herd)', 'Avocados', 'Bread', 'Eggs', 'Milk']
     )
 
     filtered = combined_food_emissions[combined_food_emissions['food'].isin(selected)]
@@ -138,7 +168,11 @@ with tab2:
             y=alt.Y('food:N', sort='-x', title='Food'),
             color=alt.Color(
                 'ghg_emission:Q',
-                scale=alt.Scale(scheme='reds'),
+                    scale=alt.Scale(
+                    domain=[combined_food_emissions['ghg_emission'].min(), combined_food_emissions['ghg_emission'].max()],
+
+                    range=['#6fbf73', '#EF2F06']  # green to red
+                ),
                 legend=alt.Legend(title='Emission Intensity')
             ),
             tooltip=[
@@ -161,3 +195,86 @@ with tab2:
     ).configure_legend(
         titleFontSize=13, labelFontSize=11
     ).configure_view(strokeOpacity=0), use_container_width=True)
+    
+    # show reference point for emissions
+    tab2.markdown("### 🌍 Emissions Reference Points")
+    tab2.markdown(
+        """
+        To help interpret GHG emissions, here are some typical reference values:
+
+        - 🚌 **1 km by diesel bus** ≈ 0.105 kg CO₂‑eq  
+        - ✈️ **1 km of air travel (economy passenger)** ≈ 0.133 kg CO₂‑eq  
+        - 🍌 **1 banana** ≈ 0.08 kg CO₂‑eq  
+        - 📦 **1 delivery by van (urban)** ≈ 0.5–1.0 kg CO₂‑eq
+        These can help place food emissions in context.
+        """)
+
+# --- tab 3 setup ---
+with tab3:
+    tab3.title("🧮 Your Diet Emissions Calculator")
+    tab3.subheader("Estimate your weekly CO₂‑eq emissions from food 🌱")
+
+    food_options = combined_food_emissions['food'].unique()
+
+    if 'diet_quantities' not in st.session_state:
+        st.session_state.diet_quantities = {}
+
+    selected_foods = st.multiselect(
+        "Choose foods to include in your weekly diet:",
+        options=food_options,
+        default=list(st.session_state.diet_quantities.keys())
+    )
+
+    for food in list(st.session_state.diet_quantities.keys()):
+        if food not in selected_foods:
+            del st.session_state.diet_quantities[food]
+
+    st.markdown("### 🍽️ Enter Weekly Quantities")
+    cols = st.columns(2)
+
+    for i, food in enumerate(selected_foods):
+        with cols[i % 2]:
+            qty = st.number_input(
+                f"{food} (kg/week)", min_value=0.0, step=0.1,
+                format="%.2f", key=f"qty_{food}",
+                value=st.session_state.diet_quantities.get(food, 0.0)
+            )
+            st.session_state.diet_quantities[food] = qty
+
+    if st.button("🔍 Calculate Emissions"):
+        results = []
+        for food, amount in st.session_state.diet_quantities.items():
+            emission_factor = combined_food_emissions.loc[
+                combined_food_emissions['food'] == food, 'ghg_emission'
+            ].values[0]
+            weekly_emissions = amount * emission_factor
+            results.append({'food': food, 'weekly_kg_CO2': weekly_emissions})
+
+        result_df = pd.DataFrame(results)
+        total_weekly = result_df['weekly_kg_CO2'].sum()
+        total_annual = total_weekly * 52
+
+        col1, col2 = st.columns(2)
+        col1.metric("🌿 Weekly Emissions", f"{total_weekly:.2f} kg CO₂‑eq")
+        col2.metric("🌍 Annual Emissions", f"{total_annual:.2f} kg CO₂‑eq")
+
+        chart = (
+            alt.Chart(result_df)
+            .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
+            .encode(
+                x=alt.X('weekly_kg_CO2:Q', title='Weekly Emissions (kg CO₂‑eq)'),
+                y=alt.Y('food:N', sort='-x'),
+                color=alt.Color(
+                    'weekly_kg_CO2:Q',
+                    scale=alt.Scale(range=['#6fbf73', '#EF2F06']),
+                    legend=alt.Legend(title='Emission Intensity')
+                ),
+                tooltip=[
+                    alt.Tooltip('food:N', title='Food'),
+                    alt.Tooltip('weekly_kg_CO2:Q', title='Weekly CO₂‑eq', format='.2f')
+                ]
+            )
+            .properties(height=400)
+        )
+
+        st.altair_chart(chart, use_container_width=True)
