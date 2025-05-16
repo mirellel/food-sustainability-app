@@ -142,7 +142,7 @@ emissions_of_food['ghg_emission'] = emissions_of_food['ghg_emission'].round(2)
 
 new_rows = emissions_of_food_2[~emissions_of_food_2['food'].isin(emissions_of_food['food'])]
 
-# now concatenate the new rows
+# combine datasets
 combined_food_emissions = pd.concat([emissions_of_food, new_rows], ignore_index=True)
 combined_food_emissions = combined_food_emissions.sort_values(by='food').reset_index(drop=True)
 
@@ -150,7 +150,6 @@ with tab2:
     tab2.title("🥦 Emissions of Food Products")
     tab2.subheader("CO₂‑eq emissions per kilogram of food 🌍")
 
-    # top emitters for defaults
     selected = tab2.multiselect(
         "Select food items to display",
         options=combined_food_emissions['food'].unique(),
@@ -185,7 +184,7 @@ with tab2:
     bars = chart
     text = bars.mark_text(
         align='left',
-        dx=3  # shift text rightwards
+        dx=3
     ).encode(
         text=alt.Text('ghg_emission:Q', format='.2f')
     )
